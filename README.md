@@ -1,2 +1,2 @@
-# pygame-game
-atari breakout inspired game
+# Brick Invaders
+PyGame project inspired by Atari Breakout x Space Invaders
