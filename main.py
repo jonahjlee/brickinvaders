@@ -3,13 +3,20 @@ import sys
 import pygame
 from math import floor, sin, cos, atan, sqrt, degrees, radians
 from random import randrange, random, randint
+from time import sleep
 
 SCREEN_WIDTH = 1000
 SCREEN_HEIGHT = 700
 FRAME_RATE = 100
 
+lives = 3
 immortal = False
 dead = False
+victorywave = 0
+
+ballcount = 1
+ballsize = 30
+ballspawny = 630 - (ballsize/2)
 
 pygame.init()
 
@@ -19,6 +26,8 @@ screen.set_alpha(0)  # make alpha bits transparent
 clock = pygame.time.Clock()
 
 # load & scale assets
+neogauge = pygame.mixer.music.load('assets/neogauge.mp3')
+
 click = pygame.mixer.Sound('assets/click.ogg')
 
 splat = pygame.mixer.Sound('assets/splat.wav')
@@ -31,6 +40,24 @@ speedfade = pygame.transform.scale(og_speedfade, (SCREEN_WIDTH, 70))
 
 youdied = pygame.image.load("assets/youdied.png")
 youdiedscaled = pygame.transform.scale(youdied, (SCREEN_WIDTH, SCREEN_HEIGHT))
+
+youlose = pygame.image.load("assets/youlose.jpg")
+youlosescaled = pygame.transform.scale(youlose, (SCREEN_WIDTH, SCREEN_HEIGHT))
+
+loading = pygame.image.load("assets/loading.gif")
+loadingscaled = pygame.transform.scale(loading, (SCREEN_WIDTH, SCREEN_HEIGHT))
+
+title = pygame.image.load("assets/title.png")
+titlescaled = pygame.transform.scale(title, (SCREEN_WIDTH, SCREEN_HEIGHT))
+
+victory = pygame.image.load("assets/victory.png")
+victoryscaled = pygame.transform.scale(victory, (960, 540))
+
+instructions = pygame.image.load("assets/instructions.png")
+instructionsscaled = pygame.transform.scale(instructions, (SCREEN_WIDTH, SCREEN_HEIGHT))
+
+heart = pygame.image.load("assets/heart.png")
+heartscaled = pygame.transform.scale(heart, (30, 30))
 
 # create sprite groups
 platforms = pygame.sprite.Group()
@@ -47,7 +74,7 @@ def addenemy(x, y, size):
 def spawnenemies(count, size, xspacing, yspacing):
     enemyxspacing = xspacing + size
     enemyyspacing = yspacing + size
-    enemycontainer = SCREEN_WIDTH - size
+    enemycontainer = SCREEN_WIDTH - (2*size)
     for i in range(count):
         x = ((enemyxspacing)*i) % enemycontainer
         y = (enemyyspacing)*(1 + floor((enemyxspacing)*i/enemycontainer))
@@ -61,7 +88,7 @@ def splatter(count, centerx, centery):
     for i in range(count):
         blood.add(Bloodsplatter(centerx, centery))
 
-# declare all classes (this is long - ends at line 537)
+# declare all classes (this is long - ends at line 554)
 class Platform(pygame.sprite.Sprite):
 
     def __init__(self, xcenter, y):
@@ -71,7 +98,7 @@ class Platform(pygame.sprite.Sprite):
         self.width = self.defaultw
         self.activeheight = round(self.width/92*9)
 
-        # image size 92 x 9#
+        # image size 92 x 9
         # platform width 78 (centered)
 
 
@@ -180,9 +207,9 @@ class Platform(pygame.sprite.Sprite):
     def update(self):
 
         self.checkcooldowns()
-        
+
         keys_pressed = pygame.key.get_pressed()
-        
+
         self.runmovement()
 
         self.setblasters()
@@ -209,7 +236,7 @@ class Ball(pygame.sprite.Sprite):
         self.angle = randrange(0, 900)/10+45
 
         self.firecooldown = 0
-    
+
     def move(self, xchange, ychange):
         self.realx += xchange
         self.realy += ychange
@@ -245,14 +272,9 @@ class Ball(pygame.sprite.Sprite):
 
     def horizontalbounce(self):
         self.angle = (180 - self.angle) + 180
-    
+
     def multiball(self):
         self.selfspawnballs(2, self.rect.x, self.rect.y, self.size, 5, randrange(0, 900)/10+45)
-
-    def correctangles(self):
-        self.angle = self.angle % 360
-        if round(self.angle, 3) % 90 == 0:
-            self.angle += 5
 
     def bounceonedges(self):
         if ((self.rect.x + self.size) >= SCREEN_WIDTH):
@@ -260,13 +282,12 @@ class Ball(pygame.sprite.Sprite):
             self.verticalbounce()
         elif ((self.rect.x) <= 0):
             self.rect.x = 1
-            self.verticalbounce()
+            if 90 <= (self.angle % 360) <= 270:
+                self.verticalbounce()
         if ((self.rect.y) < 0):
             self.rect.y = 1
-            self.horizontalbounce()
-            if 0 >= self.angle >= 360:
-                print(ball)
-
+            if 0 <= (self.angle % 360) <= 180:
+                self.horizontalbounce()
 
     def updatepowers(self):
         if self.firecooldown > 0:
@@ -278,17 +299,16 @@ class Ball(pygame.sprite.Sprite):
     def collidewplatform(self, platform):
         if pygame.sprite.collide_rect(self, platform):
 
-            if platform.rect.top < (self.rect.bottom - self.gety(self.angle)):
+            if platform.rect.top < (self.rect.bottom - self.gety(self.angle) - 1):
                 self.verticalbounce()
             else:
                 self.horizontalbounce()
 
-
             ballpospercent = ((self.rect.centerx - platform.rect.x)/platform.rect.width)*100
-            self.angle -= (ballpospercent - 50)/3 % 360
+            self.angle -= (ballpospercent - 50)/3 - 360
 
     def collidewenemies(self, enemies, Powerup):
-        
+
         enemies_hit = pygame.sprite.spritecollide(self, enemies, True)
 
         for enemy in enemies_hit:
@@ -341,8 +361,6 @@ class Ball(pygame.sprite.Sprite):
             self.collidewenemies(enemies, Powerup)
             splat.play()
 
-        self.correctangles()
-
 class Enemy(pygame.sprite.Sprite):
 
     def __init__(self, x, y, size):
@@ -359,12 +377,8 @@ class Enemy(pygame.sprite.Sprite):
         self.realy = y
         self.rect.x = int(self.realx)
         self.rect.y = int(self.realy)
-    
-    def move(self, xchange, ychange):
-        self.realx += xchange
-        self.realy += ychange
-        self.rect.x = int(self.realx)
-        self.rect.y = int(self.realy)
+
+        self.movecycle = 0
 
     def shoot(self, platform):
         xdiff = platform.rect.centerx - self.rect.x
@@ -392,8 +406,11 @@ class Enemy(pygame.sprite.Sprite):
         bullets.add(Bullet(self.rect.centerx, self.rect.bottom, x*b, b, angle))
 
     def update(self, platform):
-        if random() > 0.9996:
+        shootprobability = 0.015/len(enemies)
+        if random() < shootprobability:
             self.shoot(platform)
+        self.rect.x = self.realx + self.size + 20*sin(self.movecycle)
+        self.movecycle += 0.03
 
 class Bullet(pygame.sprite.Sprite):
     def __init__(self, xcenter, y, xchange, ychange, angle):
@@ -423,7 +440,8 @@ class Bullet(pygame.sprite.Sprite):
             bullets.remove(self)
 
         if pygame.sprite.spritecollide(platform, bullets, True) and not immortal:
-            platform.lenset(platform.rect.w - 20)
+            if not dead:
+                platform.lenset(platform.rect.w - 20)
 
 class Powerup(pygame.sprite.Sprite):
 
@@ -481,18 +499,18 @@ class Powerup(pygame.sprite.Sprite):
         if self.power == 1:
             for platform in platforms:
                 platform.lenset(platform.rect.w + 75)
-                platform.growcooldown = 2000
+                platform.growcooldown = 150
         elif self.power == 2:
             for platform in platforms:
                 platform.maxspd = 10
                 platform.accel = 1
-                platform.speedcooldown = 2000
+                platform.speedcooldown = 1500
         elif self.power == 3:
             for ball in balls:
                 ball.multiball()
         elif self.power == 4:
             for ball in balls:
-                ball.firecooldown = 800
+                ball.firecooldown = 400
 
     def update(self, platforms, balls):
         self.move(0, 2)
@@ -534,71 +552,166 @@ class Bloodsplatter(pygame.sprite.Sprite):
         if self.rect.w <= 0 or self.rect.h <= 0:
             blood.remove(self)
 
-# create starting objects
-platform = Platform(500, 630)
-platforms.add(platform)
 
-spawnenemies(48, 50, 10, 5)
+titlescreen = True
+losescreen = False
+maingame = False
+instructions = False
+youlose = False
 
-ballcount = 1
-ballsize = 30
-ballspawny = 630 - (ballsize/2)
-spawnballs(ballcount, platform.rect.centerx, ballspawny, ballsize, 0, randrange(0, 900)/10+45)
+
+
+pygame.mixer.music.play(-1, 0, 0)
+
 
 # main game loop
 while True:
-    """
-    EVENTS section - how the code reacts when users do things
-    """
+
+
+    # get user inputs
     for event in pygame.event.get():
         if event.type == pygame.QUIT:  # when user clicks the 'x' on the window, close the game
             pygame.quit()
             sys.exit()
 
-    # get user inputs
     keys_pressed = pygame.key.get_pressed()
-    mouse_pos = pygame.mouse.get_pos()
-    mousex = mouse_pos[0]
-    mousey = mouse_pos[1]
     mouse_buttons = pygame.mouse.get_pressed()
 
-    # respawn button
-    if dead and (184 <= mousex <= 820) and (360 <= mousey <= 424) and mouse_buttons[0]:
-        platform.reset()
-        click.play()
+
+    if titlescreen:
+        screen.blit(titlescaled, (0, 0))
+        if keys_pressed[pygame.K_s]:
+            screen.blit(loadingscaled, (0, 0))
+            maingame = True
+        if keys_pressed[pygame.K_i]:
+            maingame = False
+            titlescreen = False
+            instructions = True
+            title = False
+            youlose = False
+
+
+    if instructions:
+        screen.blit(instructionsscaled, (0, 0))
+        if keys_pressed[pygame.K_ESCAPE]:
+            instructions = False
+            titlescreen = True
+            maingame = False
+            youlose = False
+
+    
+    if losescreen:
+        screen.blit(youlosescaled, (0, 0))
+
+        if mouse_buttons[0]:
+            instructions = False
+            titlescreen = True
+            maingame = False
+            losescreen = False
+            click.play()
+            screen.blit(loadingscaled, (0, 0))
+
+
+    if maingame:
+        # create starting objects
+        platform = Platform(500, 630)
+        platforms.add(platform)
+        spawnenemies(60, 50, 10, 5)
         spawnballs(ballcount, platform.rect.centerx, ballspawny, ballsize, 0, randrange(0, 900)/10+45)
+        lives = 3
         dead = False
 
+    while maingame:
+        """
+        EVENTS section - how the code reacts when users do things
+        """
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:  # when user clicks the 'x' on the window, close the game
+                pygame.quit()
+                sys.exit()
 
-    """
-    UPDATE section - manipulate everything on the screen
-    """
+        # get user inputs
+        keys_pressed = pygame.key.get_pressed()
+        mouse_pos = pygame.mouse.get_pos()
+        mousex = mouse_pos[0]
+        mousey = mouse_pos[1]
+        mouse_buttons = pygame.mouse.get_pressed()
 
-    platform.update()
-    enemies.update(platform)
-    balls.update(platform, enemies, Powerup, immortal)
-    powerups.update(platforms, balls)
-    bullets.update(platform, immortal)
-    blood.update()
-    if len(balls) < 1 or platform.rect.w < 40:
-        dead = True
+        # respawn button
+        if dead and (((184 <= mousex <= 820) and (360 <= mousey <= 424) and mouse_buttons[0]) or keys_pressed[pygame.K_r]):
+            balls.empty()
+            platform.reset()
+            click.play()
+            spawnballs(ballcount, platform.rect.centerx, ballspawny, ballsize, 0, randrange(0, 900)/10+45)
+            dead = False
+        if dead and (((184 <= mousex <= 820) and (437 <= mousey <= 500) and mouse_buttons[0]) or keys_pressed[pygame.K_ESCAPE]):
+            maingame = False
+            titlescreen = True
+            losescreen = False
+            platforms.empty()
+            balls.empty()
+            enemies.empty()
+            bullets.empty()
+            blood.empty()
+            powerups.empty()
 
-    """
-    DRAW section - make everything show up on screen
-    """
-    screen.blit(bg, (0, 0))
 
-    if platform.speedcooldown > 0:
-        screen.blit(speedfade, (0, 605))
+        """
+        UPDATE section - manipulate everything on the screen
+        """
 
-    enemies.draw(screen)
-    balls.draw(screen)
-    platforms.draw(screen)
-    powerups.draw(screen)
-    bullets.draw(screen)
-    blood.draw(screen)
+        platform.update()
+        enemies.update(platform)
+        balls.update(platform, enemies, Powerup, immortal)
+        powerups.update(platforms, balls)
+        bullets.update(platform, immortal)
+        blood.update()
+        if len(balls) < 1 or platform.rect.w < 40:
+            if not dead:
+                if lives > 1:
+                    lives -= 1
+                else:
+                    maingame = False
+                    titlescreen = False
+                    losescreen = True
+                    platforms.empty()
+                    balls.empty()
+                    enemies.empty()
+                    bullets.empty()
+                    blood.empty()
+                    powerups.empty()
+            dead = True
 
-    if dead:
-        screen.blit(youdiedscaled, (0, 0))
-    pygame.display.flip()  # Pygame uses a double-buffer, without this we see half-completed frames
-    clock.tick(FRAME_RATE)  # Pause the clock to always maintain FRAME_RATE frames per second
+        if maingame:
+            """
+            DRAW section - make everything show up on screen
+            """
+            screen.blit(bg, (0, 0))
+
+            if platform.speedcooldown > 0:
+                screen.blit(speedfade, (0, 605))
+
+            enemies.draw(screen)
+            balls.draw(screen)
+            platforms.draw(screen)
+            powerups.draw(screen)
+            bullets.draw(screen)
+            blood.draw(screen)
+
+            if dead and not len(enemies) < 1:
+                screen.blit(youdiedscaled, (0, 0))
+
+            if len(enemies) < 1:
+                vicy = sin(victorywave)
+                screen.blit(victoryscaled, (20, vicy*100 + 80))
+                immortal = True
+                victorywave += 0.03
+
+            for i in range(lives):
+                screen.blit(heartscaled, (10+30*i, 660))
+
+            pygame.display.flip()  # Pygame uses a double-buffer, without this we see half-completed frames
+
+            clock.tick(FRAME_RATE)  # Pause the clock to always maintain FRAME_RATE frames per second
+
+    pygame.display.flip()
